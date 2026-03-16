@@ -82,8 +82,8 @@ function GameCard({ g }) {
   const lo = g.liveOdds;
 
   // Compute spread divergence
-  const openAbs = g.openSpread !== null ? Math.abs(g.openSpread) : null;
-  const liveAbs = lo?.liveSpread !== null ? Math.abs(lo.liveSpread) : null;
+  const openAbs = g.openSpread != null ? Math.abs(g.openSpread) : null;
+  const liveAbs = lo && lo.liveSpread != null ? Math.abs(lo.liveSpread) : null;
   let divergence = null;
   if (openAbs !== null && liveAbs !== null) divergence = liveAbs - openAbs;
 
