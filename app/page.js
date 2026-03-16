@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 // ─── Config ──────────────────────────────────────────────
 const POLL_INTERVAL = 30000;
-const UNDERPERFORMANCE_THRESHOLD = 5; // points behind spread to trigger alert
-const MIN_ELAPSED_MINUTES = 5; // must be 5+ min into game
+const UNDERPERFORMANCE_THRESHOLD = 5;
+const MIN_ELAPSED_MINUTES = 5;
+const RUN_ALERT_THRESHOLD = 0.75; // 75% of last 15 points
 
 const STATUS_LABELS = {
   inprogress: "LIVE",
@@ -25,34 +26,32 @@ function getStatusColor(status) {
   }
 }
 
-/**
- * NEW ALERT LOGIC:
- * Flag a game when:
- *   1. Game is live (inprogress or halftime)
- *   2. At least 5 minutes of game time have elapsed
- *   3. Spread data is available
- *   4. The favorite is underperforming the opening spread by MORE than 5 points
- *
- * Example: Favorite is -9.5 (expected to win by 9.5).
- *   They're up by 2 → underperforming by 7.5 → FLAGGED
- *   They're up by 6 → underperforming by 3.5 → not flagged
- *   They're down by 3 → underperforming by 12.5 → FLAGGED
- */
 function isSpreadAlert(game) {
   if (game.status !== "inprogress" && game.status !== "halftime") return false;
   if (game.elapsedMinutes < MIN_ELAPSED_MINUTES) return false;
   if (game.spreadUnderperformance === null || game.spreadUnderperformance === undefined) return false;
   if (game.expectedMargin === null) return false;
-
   return game.spreadUnderperformance > UNDERPERFORMANCE_THRESHOLD;
 }
 
-function formatUnderperformance(val) {
-  if (val === null || val === undefined) return "–";
-  return val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1);
+function hasRunAlert(game) {
+  if (!game.scoringRun || game.scoringRun.totalRunPts === 0) return false;
+  const { homeRunPts, awayRunPts, totalRunPts } = game.scoringRun;
+  return (
+    homeRunPts / totalRunPts >= RUN_ALERT_THRESHOLD ||
+    awayRunPts / totalRunPts >= RUN_ALERT_THRESHOLD
+  );
 }
 
-// ─── CSS Animations ──────────────────────────────────────
+function getRunAlertTeam(game) {
+  if (!game.scoringRun || game.scoringRun.totalRunPts === 0) return null;
+  const { homeRunPts, awayRunPts, totalRunPts } = game.scoringRun;
+  if (homeRunPts / totalRunPts >= RUN_ALERT_THRESHOLD) return game.home;
+  if (awayRunPts / totalRunPts >= RUN_ALERT_THRESHOLD) return game.away;
+  return null;
+}
+
+// ─── CSS ─────────────────────────────────────────────────
 const globalCSS = `
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -79,6 +78,48 @@ const globalCSS = `
 
 // ─── Components ──────────────────────────────────────────
 
+function MomentumBar({ teamPts, totalPts, isHome, hasAlert }) {
+  if (!totalPts || totalPts === 0) return null;
+
+  const pct = (teamPts / totalPts) * 100;
+  const isHot = pct >= RUN_ALERT_THRESHOLD * 100;
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 6, minWidth: 80,
+    }}>
+      {/* Bar */}
+      <div style={{
+        width: 44, height: 5, borderRadius: 3,
+        background: "rgba(255,255,255,0.06)",
+        overflow: "hidden", flexShrink: 0,
+      }}>
+        <div style={{
+          height: "100%",
+          width: `${Math.min(pct, 100)}%`,
+          borderRadius: 3,
+          background: isHot
+            ? "linear-gradient(90deg, #FF9500, #FF3B30)"
+            : pct >= 50
+            ? "#30D158"
+            : "rgba(255,255,255,0.15)",
+          transition: "width 0.6s ease, background 0.6s ease",
+        }} />
+      </div>
+      {/* Number */}
+      <span style={{
+        fontSize: 10, fontWeight: 700,
+        fontFamily: "'JetBrains Mono', monospace",
+        color: isHot ? "#FF9500" : "rgba(255,255,255,0.3)",
+        minWidth: 14, textAlign: "right",
+        transition: "color 0.3s",
+      }}>
+        {teamPts}
+      </span>
+    </div>
+  );
+}
+
 function SpreadBadge({ game }) {
   if (game.expectedMargin === null) return null;
 
@@ -87,9 +128,7 @@ function SpreadBadge({ game }) {
   const spreadVal = game.openSpread !== null ? Math.abs(game.openSpread).toFixed(1) : "?";
 
   return (
-    <div style={{
-      display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap",
-    }}>
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       <span style={{
         fontSize: 10, color: "rgba(255,255,255,0.3)",
         fontFamily: "'JetBrains Mono', monospace",
@@ -114,7 +153,7 @@ function SpreadBadge({ game }) {
   );
 }
 
-function TeamRow({ abbr, name, logo, seed, score, isFav, isWinning, isLive, hasScore }) {
+function TeamRow({ abbr, name, logo, seed, score, isFav, isWinning, isLive, hasScore, runPts, totalRunPts, isRunHot }) {
   return (
     <div style={{
       display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0",
@@ -161,19 +200,29 @@ function TeamRow({ abbr, name, logo, seed, score, isFav, isWinning, isLive, hasS
         )}
       </div>
 
-      <span style={{
-        fontSize: 24, fontWeight: 800,
-        color: isWinning && isLive ? "#fff" : hasScore ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)",
-        fontFamily: "'JetBrains Mono', monospace", minWidth: 40, textAlign: "right", transition: "color 0.3s",
-      }}>
-        {hasScore ? score : "–"}
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Momentum bar — only show for live games with run data */}
+        {isLive && totalRunPts > 0 && (
+          <MomentumBar teamPts={runPts} totalPts={totalRunPts} hasAlert={isRunHot} />
+        )}
+
+        {/* Score */}
+        <span style={{
+          fontSize: 24, fontWeight: 800,
+          color: isWinning && isLive ? "#fff" : hasScore ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)",
+          fontFamily: "'JetBrains Mono', monospace", minWidth: 40, textAlign: "right", transition: "color 0.3s",
+        }}>
+          {hasScore ? score : "–"}
+        </span>
+      </div>
     </div>
   );
 }
 
 function GameCard({ game }) {
-  const alert = isSpreadAlert(game);
+  const spreadAlert = isSpreadAlert(game);
+  const runAlert = hasRunAlert(game);
+  const anyAlert = spreadAlert || runAlert;
   const isLive = game.status === "inprogress" || game.status === "halftime";
   const homeIsFav = game.spreadFavoriteAbbr === game.home;
 
@@ -182,19 +231,29 @@ function GameCard({ game }) {
   const homeScore = game.score?.[game.home];
   const awayScore = game.score?.[game.away];
 
+  const run = game.scoringRun;
+  const homeRunPts = run?.homeRunPts ?? 0;
+  const awayRunPts = run?.awayRunPts ?? 0;
+  const totalRunPts = run?.totalRunPts ?? 0;
+
+  const runAlertTeam = getRunAlertTeam(game);
+
   return (
     <div style={{
-      background: alert
+      background: spreadAlert
         ? "linear-gradient(135deg, rgba(255,59,48,0.07) 0%, rgba(255,100,50,0.03) 100%)"
         : "rgba(255,255,255,0.025)",
-      border: alert ? "1px solid rgba(255,59,48,0.35)" : "1px solid rgba(255,255,255,0.05)",
+      border: spreadAlert
+        ? "1px solid rgba(255,59,48,0.35)"
+        : "1px solid rgba(255,255,255,0.05)",
       borderRadius: 16, padding: "14px 18px",
-      animation: alert
+      animation: spreadAlert
         ? "alertGlow 2.5s ease-in-out infinite, slideIn 0.35s ease-out"
         : "slideIn 0.35s ease-out",
-      position: "relative", overflow: "hidden", transition: "border-color 0.5s, background 0.5s",
+      position: "relative", overflow: "hidden",
+      transition: "border-color 0.5s, background 0.5s",
     }}>
-      {/* Header: status + alert badge */}
+      {/* Header: status + badges */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ position: "relative", width: 8, height: 8 }}>
@@ -224,31 +283,66 @@ function GameCard({ game }) {
           )}
         </div>
 
-        {alert && (
-          <div style={{
-            background: "rgba(255,59,48,0.15)", border: "1px solid rgba(255,59,48,0.3)",
-            borderRadius: 20, padding: "3px 10px",
-            fontSize: 10, fontWeight: 800, color: "#FF6B6B",
-            letterSpacing: "0.1em", fontFamily: "'JetBrains Mono', monospace",
-          }}>
-            🚨 {game.spreadUnderperformance.toFixed(1)} OFF SPREAD
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {/* Run alert badge — subtle */}
+          {runAlert && (
+            <div style={{
+              background: "rgba(255,149,0,0.12)",
+              border: "1px solid rgba(255,149,0,0.25)",
+              borderRadius: 20, padding: "3px 8px",
+              fontSize: 9, fontWeight: 800, color: "#FF9500",
+              letterSpacing: "0.08em", fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              🔥 {runAlertTeam} RUN
+            </div>
+          )}
+
+          {/* Spread alert badge */}
+          {spreadAlert && (
+            <div style={{
+              background: "rgba(255,59,48,0.15)", border: "1px solid rgba(255,59,48,0.3)",
+              borderRadius: 20, padding: "3px 10px",
+              fontSize: 10, fontWeight: 800, color: "#FF6B6B",
+              letterSpacing: "0.1em", fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              🚨 {game.spreadUnderperformance.toFixed(1)} OFF SPREAD
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Column header for momentum when live */}
+      {isLive && totalRunPts > 0 && (
+        <div style={{
+          display: "flex", justifyContent: "flex-end", marginBottom: 2, paddingRight: 0,
+        }}>
+          <span style={{
+            fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,0.2)",
+            fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.08em",
+            marginRight: 50,
+          }}>
+            LAST {totalRunPts} PTS
+          </span>
+        </div>
+      )}
 
       {/* Team rows */}
       <TeamRow
         abbr={game.away} name={awayData.name || game.away} logo={awayData.logo} seed={awayData.seed}
-        score={awayScore} isFav={!homeIsFav && !!game.spreadFavoriteAbbr}
+        score={awayScore} isFav={game.spreadFavoriteAbbr === game.away}
         isWinning={awayScore != null && homeScore != null && awayScore > homeScore}
         isLive={isLive} hasScore={game.status !== "scheduled"}
+        runPts={awayRunPts} totalRunPts={totalRunPts}
+        isRunHot={runAlertTeam === game.away}
       />
       <div style={{ height: 1, background: "rgba(255,255,255,0.04)", margin: "4px 0" }} />
       <TeamRow
         abbr={game.home} name={homeData.name || game.home} logo={homeData.logo} seed={homeData.seed}
-        score={homeScore} isFav={homeIsFav && !!game.spreadFavoriteAbbr}
+        score={homeScore} isFav={game.spreadFavoriteAbbr === game.home}
         isWinning={homeScore != null && awayScore != null && homeScore > awayScore}
         isLive={isLive} hasScore={game.status !== "scheduled"}
+        runPts={homeRunPts} totalRunPts={totalRunPts}
+        isRunHot={runAlertTeam === game.home}
       />
 
       {/* Spread info bar */}
@@ -266,13 +360,13 @@ function GameCard({ game }) {
         </div>
       )}
 
-      {/* Early game indicator — spread exists but <5 min elapsed */}
+      {/* Early game indicator */}
       {isLive && game.expectedMargin !== null && game.elapsedMinutes < MIN_ELAPSED_MINUTES && (
         <div style={{
           marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.2)",
           fontFamily: "'JetBrains Mono', monospace", fontStyle: "italic",
         }}>
-          Monitoring starts at 5:00 min mark
+          Spread monitoring starts at 5:00 min mark
         </div>
       )}
     </div>
@@ -315,22 +409,23 @@ export default function Home() {
     .filter((g) => {
       if (onlyMarchMadness && !g.isMarchMadness) return false;
       if (filter === "live") return g.status === "inprogress" || g.status === "halftime";
-      if (filter === "alerts") return isSpreadAlert(g);
+      if (filter === "spread") return isSpreadAlert(g);
+      if (filter === "runs") return hasRunAlert(g);
       return true;
     })
     .sort((a, b) => {
-      const aAlert = isSpreadAlert(a) ? 0 : 1;
-      const bAlert = isSpreadAlert(b) ? 0 : 1;
-      if (aAlert !== bAlert) return aAlert - bAlert;
-      // Secondary sort: worst underperformance first
-      const aUnder = a.spreadUnderperformance ?? -999;
-      const bUnder = b.spreadUnderperformance ?? -999;
-      if (aAlert === 0 && bAlert === 0) return bUnder - aUnder;
+      const aSpread = isSpreadAlert(a) ? 0 : 1;
+      const bSpread = isSpreadAlert(b) ? 0 : 1;
+      if (aSpread !== bSpread) return aSpread - bSpread;
+      const aRun = hasRunAlert(a) ? 0 : 1;
+      const bRun = hasRunAlert(b) ? 0 : 1;
+      if (aRun !== bRun) return aRun - bRun;
       const order = { inprogress: 0, halftime: 1, scheduled: 2, closed: 3 };
       return (order[a.status] ?? 4) - (order[b.status] ?? 4);
     });
 
-  const alertCount = games.filter(isSpreadAlert).length;
+  const spreadAlertCount = games.filter(isSpreadAlert).length;
+  const runAlertCount = games.filter(hasRunAlert).length;
   const liveCount = games.filter(
     (g) => g.status === "inprogress" || g.status === "halftime"
   ).length;
@@ -344,16 +439,15 @@ export default function Home() {
     }}>
       <style>{globalCSS}</style>
 
-      {/* Ambient glow */}
       <div style={{
         position: "fixed", top: -300, right: -200, width: 600, height: 600, borderRadius: "50%",
-        background: alertCount > 0
+        background: spreadAlertCount > 0
           ? "radial-gradient(circle, rgba(255,59,48,0.06) 0%, transparent 70%)"
           : "radial-gradient(circle, rgba(48,209,88,0.03) 0%, transparent 70%)",
         pointerEvents: "none", transition: "background 2s ease",
       }} />
 
-      <div style={{ maxWidth: 540, margin: "0 auto", padding: "20px 16px env(safe-area-inset-bottom)" }}>
+      <div style={{ maxWidth: 580, margin: "0 auto", padding: "20px 16px env(safe-area-inset-bottom)" }}>
         {/* Header */}
         <header style={{ marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
@@ -366,7 +460,7 @@ export default function Home() {
               WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
               fontFamily: "'JetBrains Mono', monospace",
             }}>
-              SPREAD TRACKER
+              LIVE TRACKER
             </span>
           </div>
           <div style={{
@@ -387,12 +481,12 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Alert banner */}
-        {alertCount > 0 && (
+        {/* Alert banner — spread alerts */}
+        {spreadAlertCount > 0 && (
           <div style={{
             background: "linear-gradient(135deg, rgba(255,59,48,0.1) 0%, rgba(255,149,0,0.06) 100%)",
             border: "1px solid rgba(255,59,48,0.25)", borderRadius: 14,
-            padding: "14px 18px", marginBottom: 18,
+            padding: "14px 18px", marginBottom: 12,
             animation: "alertGlow 2.5s ease-in-out infinite",
             display: "flex", alignItems: "center", gap: 14,
           }}>
@@ -401,15 +495,38 @@ export default function Home() {
               background: "rgba(255,59,48,0.12)",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 20, flexShrink: 0,
-            }}>
-              🏀
-            </div>
+            }}>🏀</div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#FF6B6B" }}>
-                {alertCount} Spread Alert{alertCount !== 1 ? "s" : ""}!
+                {spreadAlertCount} Spread Alert{spreadAlertCount !== 1 ? "s" : ""}
               </div>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
-                Favorite{alertCount !== 1 ? "s" : ""} underperforming opening spread by 5+ pts
+                Favorite{spreadAlertCount !== 1 ? "s" : ""} underperforming opening line by 5+ pts
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Alert banner — run alerts */}
+        {runAlertCount > 0 && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,214,10,0.04) 100%)",
+            border: "1px solid rgba(255,149,0,0.2)", borderRadius: 14,
+            padding: "12px 18px", marginBottom: 18,
+            display: "flex", alignItems: "center", gap: 14,
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: "rgba(255,149,0,0.1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18, flexShrink: 0,
+            }}>🔥</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#FF9500" }}>
+                {runAlertCount} Scoring Run{runAlertCount !== 1 ? "s" : ""}
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>
+                A team scored 75%+ of the last 15 points
               </div>
             </div>
           </div>
@@ -423,7 +540,8 @@ export default function Home() {
           {[
             { key: "all", label: `All (${games.length})` },
             { key: "live", label: `Live (${liveCount})` },
-            { key: "alerts", label: `Alerts${alertCount > 0 ? ` (${alertCount})` : ""}` },
+            { key: "spread", label: `Spread${spreadAlertCount > 0 ? ` (${spreadAlertCount})` : ""}` },
+            { key: "runs", label: `Runs${runAlertCount > 0 ? ` (${runAlertCount})` : ""}` },
           ].map((f) => (
             <button
               key={f.key}
@@ -493,8 +611,10 @@ export default function Home() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {displayGames.length === 0 ? (
               <div style={{ textAlign: "center", padding: 48, color: "rgba(255,255,255,0.25)", fontSize: 13 }}>
-                {filter === "alerts"
-                  ? "No spread alerts — all favorites performing within 5 pts of their line."
+                {filter === "spread"
+                  ? "No spread alerts — favorites performing within range."
+                  : filter === "runs"
+                  ? "No scoring runs detected right now."
                   : filter === "live"
                   ? "No live games at the moment."
                   : "No games scheduled."}
@@ -512,9 +632,10 @@ export default function Home() {
           textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.18)",
           fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.6,
         }}>
-          Spreads sourced from ESPN BET · Auto-refreshes every {POLL_INTERVAL / 1000}s
-          <br />Alerts: favorite &gt;5 pts behind opening spread after 5 min
-          <br />Add to Home Screen for app-like experience
+          Spreads via ESPN BET · Scoring runs via play-by-play
+          <br />Auto-refreshes every {POLL_INTERVAL / 1000}s
+          <br />Spread alert: favorite &gt;5 pts behind line after 5 min
+          <br />Run alert: one team scored 75%+ of last 15 pts
         </footer>
       </div>
     </div>

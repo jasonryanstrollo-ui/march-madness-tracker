@@ -1,23 +1,23 @@
 // app/api/scores/route.js
-// Serverless API route — fetches live college basketball scores + opening spreads
-// Uses ESPN's public scoreboard endpoint (no API key needed)
+// Fetches live college basketball scores + opening spreads + play-by-play for scoring runs
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard";
+const ESPN_SUMMARY_URL =
+  "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary";
+
+const RUN_WINDOW = 15; // last N points to track
 
 /**
- * Parse the game clock and period to determine elapsed minutes.
- * College basketball: two 20-minute halves.
- * Clock counts DOWN from 20:00 each half.
+ * Parse clock + period → elapsed minutes (two 20-min halves).
  */
 function getElapsedMinutes(clock, period, statusName) {
   if (statusName === "STATUS_HALFTIME") return 20;
   if (statusName === "STATUS_FINAL" || statusName === "STATUS_END_PERIOD")
     return 40;
-
   if (!clock || !period) return 0;
 
   const parts = clock.split(":");
@@ -26,13 +26,100 @@ function getElapsedMinutes(clock, period, statusName) {
   const seconds = parseInt(parts[1], 10);
   const clockMinutes = minutes + seconds / 60;
 
-  if (period === 1) {
-    return 20 - clockMinutes;
-  } else if (period >= 2) {
-    return 20 + (20 - clockMinutes);
-  }
-
+  if (period === 1) return 20 - clockMinutes;
+  if (period >= 2) return 20 + (20 - clockMinutes);
   return 0;
+}
+
+/**
+ * Fetch play-by-play for a single game and compute last N points breakdown.
+ * Returns { homeRunPts, awayRunPts, totalRunPts } or null on failure.
+ */
+async function fetchScoringRun(eventId, homeAbbr, awayAbbr, homeId, awayId) {
+  try {
+    const res = await fetch(`${ESPN_SUMMARY_URL}?event=${eventId}`, {
+      headers: { "User-Agent": "MarchMadnessTracker/1.0" },
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+
+    // Extract scoring plays from play-by-play
+    // ESPN play-by-play is in data.plays[] — each play has scoreValue, team.id, etc.
+    const plays = data?.plays || [];
+
+    // Flatten all plays across periods and filter to scoring plays
+    const scoringPlays = [];
+
+    for (const play of plays) {
+      // Each "play" object might be a period container or a direct play
+      // ESPN structures this as an array of play objects
+      if (play.scoringPlay && play.scoreValue && play.scoreValue > 0) {
+        scoringPlays.push({
+          teamId: play.team?.id,
+          points: play.scoreValue,
+          text: play.text || "",
+          homeScore: play.homeScore,
+          awayScore: play.awayScore,
+        });
+      }
+    }
+
+    // If no scoring plays found, try alternative structure
+    // ESPN sometimes nests plays under periods
+    if (scoringPlays.length === 0 && data?.plays) {
+      // Try flat array approach — look for any plays with scoreValue
+      const allPlays = Array.isArray(data.plays) ? data.plays : [];
+      for (const play of allPlays) {
+        if (play.scoreValue > 0) {
+          scoringPlays.push({
+            teamId: play.team?.id,
+            points: play.scoreValue,
+            text: play.text || "",
+          });
+        }
+      }
+    }
+
+    if (scoringPlays.length === 0) return null;
+
+    // Get the last N points worth of scoring plays
+    // Walk backwards through scoring plays, accumulating points until we reach RUN_WINDOW
+    let totalPts = 0;
+    let homePts = 0;
+    let awayPts = 0;
+    const recentPlays = [];
+
+    for (let i = scoringPlays.length - 1; i >= 0 && totalPts < RUN_WINDOW; i--) {
+      const play = scoringPlays[i];
+      const pts = play.points;
+
+      // Determine which team scored
+      const isHome = play.teamId === homeId;
+      const isAway = play.teamId === awayId;
+
+      // If adding this play would exceed the window, only count partial? No — count full baskets
+      if (totalPts + pts > RUN_WINDOW + 3) break; // allow slight overshoot for a 3-pointer
+
+      totalPts += pts;
+      if (isHome) homePts += pts;
+      else if (isAway) awayPts += pts;
+
+      recentPlays.push(play);
+
+      if (totalPts >= RUN_WINDOW) break;
+    }
+
+    return {
+      homeRunPts: homePts,
+      awayRunPts: awayPts,
+      totalRunPts: totalPts,
+      runWindow: RUN_WINDOW,
+    };
+  } catch (err) {
+    console.error(`PBP fetch error for event ${eventId}:`, err.message);
+    return null;
+  }
 }
 
 export async function GET() {
@@ -52,6 +139,7 @@ export async function GET() {
     const data = await res.json();
     const events = data?.events || [];
 
+    // First pass: build game objects
     const games = events.map((event) => {
       const competition = event.competitions?.[0];
       const competitors = competition?.competitors || [];
@@ -60,11 +148,12 @@ export async function GET() {
 
       const homeAbbr = homeTeam?.team?.abbreviation || "???";
       const awayAbbr = awayTeam?.team?.abbreviation || "???";
+      const homeId = homeTeam?.team?.id || null;
+      const awayId = awayTeam?.team?.id || null;
 
       const homeSeed = homeTeam?.curatedRank?.current ?? homeTeam?.seed ?? null;
       const awaySeed = awayTeam?.curatedRank?.current ?? awayTeam?.seed ?? null;
 
-      // ── Status ──
       const espnStatusName =
         competition?.status?.type?.name || "STATUS_SCHEDULED";
       let status = "scheduled";
@@ -81,68 +170,49 @@ export async function GET() {
       const statusDetail = competition?.status?.type?.shortDetail || "";
       const elapsedMinutes = getElapsedMinutes(clock, period, espnStatusName);
 
-      // ── Odds / Spread ──
+      // Odds / Spread
       const oddsArray = competition?.odds || [];
       let openSpread = null;
       let currentSpread = null;
       let spreadFavoriteAbbr = null;
       let provider = null;
 
-      // Try ESPN BET (id 1002) first, then fall back to first provider
       let oddsObj = oddsArray.find((o) => o.provider?.id === 1002);
       if (!oddsObj && oddsArray.length > 0) oddsObj = oddsArray[0];
 
       if (oddsObj) {
         provider = oddsObj.provider?.name || "Unknown";
         currentSpread = oddsObj.spread ?? null;
-
-        // Opening spread: ESPN provides `open.spread` on some responses
-        // Fall back to current spread if open isn't available
         openSpread = oddsObj.open?.spread ?? oddsObj.spread ?? null;
 
-        // Determine favorite from the `details` field: e.g. "YALE -9.5"
         if (oddsObj.details) {
           const match = oddsObj.details.match(/^([A-Z]+)\s+[+-]?([\d.]+)/);
           if (match) spreadFavoriteAbbr = match[1];
         }
-
-        // Fallback: derive favorite from spread sign
-        // ESPN spread is from home perspective: negative = home favored
         if (!spreadFavoriteAbbr && openSpread !== null) {
           spreadFavoriteAbbr = openSpread < 0 ? homeAbbr : awayAbbr;
         }
       }
 
-      // expectedMargin: how many points the favorite "should" win by
       const expectedMargin =
         openSpread !== null ? Math.abs(openSpread) : null;
 
-      // ── Scores ──
       const homeScore = parseInt(homeTeam?.score || "0", 10);
       const awayScore = parseInt(awayTeam?.score || "0", 10);
 
-      // ── Compute actual margin from favorite's perspective ──
-      // Positive = favorite is winning by this much
-      // Negative = favorite is losing by this much
       let actualMargin = null;
       if (spreadFavoriteAbbr) {
-        if (spreadFavoriteAbbr === homeAbbr) {
-          actualMargin = homeScore - awayScore;
-        } else {
-          actualMargin = awayScore - homeScore;
-        }
+        actualMargin =
+          spreadFavoriteAbbr === homeAbbr
+            ? homeScore - awayScore
+            : awayScore - homeScore;
       }
 
-      // ── Spread underperformance ──
-      // underperformance = expectedMargin - actualMargin
-      // e.g. expected to win by 9.5, actually up by 2 → underperforming by 7.5
-      // e.g. expected to win by 3, actually up by 10 → underperforming by -7 (outperforming)
       let spreadUnderperformance = null;
       if (expectedMargin !== null && actualMargin !== null) {
         spreadUnderperformance = expectedMargin - actualMargin;
       }
 
-      // ── Start time ──
       const startDate = new Date(event.date);
       const localStart = startDate.toLocaleString("en-US", {
         weekday: "short",
@@ -159,6 +229,8 @@ export async function GET() {
         status,
         home: homeAbbr,
         away: awayAbbr,
+        homeId,
+        awayId,
         teams: {
           [homeAbbr]: {
             name: homeTeam?.team?.displayName || homeAbbr,
@@ -178,8 +250,6 @@ export async function GET() {
         period,
         statusDetail,
         elapsedMinutes,
-
-        // Spread data
         openSpread,
         currentSpread,
         expectedMargin,
@@ -187,7 +257,6 @@ export async function GET() {
         actualMargin,
         spreadUnderperformance,
         provider,
-
         local_start: localStart,
         start_time: event.date,
         isMarchMadness:
@@ -197,8 +266,26 @@ export async function GET() {
           (competition?.notes?.[0]?.headline ?? "")
             .toLowerCase()
             .includes("ncaa"),
+        // Placeholder — filled in below
+        scoringRun: null,
       };
     });
+
+    // Second pass: fetch play-by-play for live games (parallel)
+    const liveGames = games.filter(
+      (g) => g.status === "inprogress" || g.status === "halftime"
+    );
+
+    if (liveGames.length > 0) {
+      const runPromises = liveGames.map((g) =>
+        fetchScoringRun(g.id, g.home, g.away, g.homeId, g.awayId)
+      );
+      const runResults = await Promise.all(runPromises);
+
+      liveGames.forEach((g, i) => {
+        g.scoringRun = runResults[i];
+      });
+    }
 
     return Response.json({
       games,
