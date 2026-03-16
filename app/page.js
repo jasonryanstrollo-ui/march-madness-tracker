@@ -11,7 +11,7 @@ const SC = { inprogress: "#EF4444", halftime: "#F59E0B", scheduled: "#22C55E", c
 
 function isSpreadAlert(g) {
   return (g.status === "inprogress" || g.status === "halftime") &&
-    g.elapsedMinutes >= MIN_ELAPSED && g.spreadUnderperformance > SPREAD_THRESH;
+    g.elapsedMinutes >= MIN_ELAPSED && g.spreadUnderperformance != null && g.spreadUnderperformance > SPREAD_THRESH;
 }
 function hasRun(g) {
   if (!g.scoringRun?.totalRunPts) return false;
@@ -151,26 +151,26 @@ function GameCard({ g }) {
       {/* Odds row */}
       {(g.openSpread !== null || lo) && (
         <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-          {g.openSpread !== null && (
-            <OddsChip label="Open" value={`${g.spreadFavoriteAbbr} ${g.openSpread > 0 ? "+" : ""}${g.openSpread.toFixed(1)}`} />
+          {g.openSpread !== null && g.spreadFavoriteAbbr && (
+            <OddsChip label="Open" value={`${g.spreadFavoriteAbbr} ${Number(g.openSpread) > 0 ? "+" : ""}${Number(g.openSpread).toFixed(1)}`} />
           )}
-          {lo?.liveSpread !== null && (
+          {lo && lo.liveSpread != null && (
             <OddsChip
               label="Live"
-              value={`${lo.details || (lo.liveSpread < 0 ? g.home : g.away)} ${lo.liveSpread > 0 ? "+" : ""}${lo.liveSpread.toFixed(1)}`}
+              value={`${lo.details || (Number(lo.liveSpread) < 0 ? g.home : g.away)} ${Number(lo.liveSpread) > 0 ? "+" : ""}${Number(lo.liveSpread).toFixed(1)}`}
               sub={lo.liveSpreadHome ? `H ${lo.liveSpreadHome}` : lo.liveSpreadAway ? `A ${lo.liveSpreadAway}` : null}
             />
           )}
           {divergence !== null && live && (
             <OddsChip
               label="Shift"
-              value={`${divergence > 0 ? "+" : ""}${divergence.toFixed(1)}`}
-              alert={Math.abs(divergence) >= 3}
-              sub={divergence > 0 ? "line moving out" : divergence < 0 ? "line tightening" : "no move"}
+              value={`${Number(divergence) > 0 ? "+" : ""}${Number(divergence).toFixed(1)}`}
+              alert={Math.abs(Number(divergence)) >= 3}
+              sub={Number(divergence) > 0 ? "line moving out" : Number(divergence) < 0 ? "line tightening" : "no move"}
             />
           )}
-          {sa && g.spreadUnderperformance !== null && (
-            <OddsChip label="vs Spread" value={`-${g.spreadUnderperformance.toFixed(1)}`} alert={true} sub="underperforming" />
+          {sa && g.spreadUnderperformance != null && (
+            <OddsChip label="vs Spread" value={`-${Number(g.spreadUnderperformance).toFixed(1)}`} alert={true} sub="underperforming" />
           )}
         </div>
       )}
