@@ -415,17 +415,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* How it works callout */}
-        <div style={{
-          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)",
-          borderRadius: 10, padding: "10px 14px", marginBottom: 16,
-          fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace",
-          lineHeight: 1.5,
-        }}>
-          Alerts trigger after 5 min when favorite trails opening spread by &gt;5 pts.
-          <br />E.g. -9.5 spread, up by only 2 = 7.5 pts off → alert.
-        </div>
-
         {/* Filters */}
         <div style={{
           display: "flex", gap: 8, marginBottom: 18, overflowX: "auto",
