@@ -35,6 +35,7 @@ async function fetchLiveOdds(eventId) {
 
     return {
       liveSpread: odds.spread ?? null,
+      openingSpread: odds.open?.spread ?? null,
       liveSpreadOdds: odds.spreadOdds ?? null,
       liveOU: odds.overUnder ?? null,
       liveMLHome: odds.homeTeamOdds?.moneyLine ?? null,
@@ -170,6 +171,34 @@ export async function GET() {
         ]);
         g.liveOdds = odds;
         g.scoringRun = run;
+
+        // Backfill spread alert data when the scoreboard didn't provide opening odds
+        if (g.spreadUnderperformance === null && odds) {
+          // Prefer the opening spread from the odds endpoint; fall back to current live spread
+          const baseSpread = odds.openingSpread ?? odds.liveSpread ?? null;
+          if (baseSpread !== null) {
+            // Determine which team is the favourite
+            let fav = g.spreadFavoriteAbbr;
+            if (!fav && odds.details) {
+              const m = odds.details.match(/^([A-Z]+)\s+[+-]?([\d.]+)/);
+              if (m) fav = m[1];
+            }
+            if (!fav) {
+              fav = odds.liveFavHome ? g.home
+                  : odds.liveFavAway ? g.away
+                  : (baseSpread < 0 ? g.home : g.away);
+            }
+            const expM = Math.abs(baseSpread);
+            const actM = fav === g.home
+              ? g.score[g.home] - g.score[g.away]
+              : g.score[g.away] - g.score[g.home];
+            g.spreadFavoriteAbbr = g.spreadFavoriteAbbr || fav;
+            g.openSpread = g.openSpread ?? baseSpread;
+            g.expectedMargin = g.expectedMargin ?? expM;
+            g.actualMargin = actM;
+            g.spreadUnderperformance = expM - actM;
+          }
+        }
       });
       await Promise.all(promises);
     }
