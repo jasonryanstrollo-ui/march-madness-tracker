@@ -140,7 +140,7 @@ function GameCard({ g }) {
         <div style={{ display: "flex", gap: 4 }}>
           {ra && <span style={{ fontSize: 8, fontWeight: 800, color: "#F59E0B", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.2)", borderRadius: 10, padding: "2px 6px", fontFamily: "monospace" }}>🔥 {rt}</span>}
           {sa && <span style={{ fontSize: 8, fontWeight: 800, color: "#EF4444", background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "2px 6px", fontFamily: "monospace" }}>{g.spreadUnderperformance.toFixed(1)} OFF</span>}
-          {ura && <span style={{ fontSize: 8, fontWeight: 800, color: "#A78BFA", background: "rgba(167,139,250,.1)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 10, padding: "2px 6px", fontFamily: "monospace" }}>⚡ {urt}</span>}
+          {ura && <span style={{ fontSize: 8, fontWeight: 800, color: "#A78BFA", background: "rgba(167,139,250,.1)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 10, padding: "2px 6px", fontFamily: "monospace" }}>🍆 {urt}</span>}
         </div>
       </div>
 
@@ -187,7 +187,12 @@ function GameCard({ g }) {
           {lo && lo.liveSpread != null && (
             <OddsChip
               label="Live"
-              value={`${lo.details || (Number(lo.liveSpread) < 0 ? g.home : g.away)} ${Number(lo.liveSpread) > 0 ? "+" : ""}${Number(lo.liveSpread).toFixed(1)}`}
+              value={(() => {
+                const favAbbr = lo.details
+                  ? (lo.details.match(/^([A-Z]+)/)?.[1] ?? (Number(lo.liveSpread) < 0 ? g.home : g.away))
+                  : (Number(lo.liveSpread) < 0 ? g.home : g.away);
+                return `${favAbbr} ${Number(lo.liveSpread) > 0 ? "+" : ""}${Number(lo.liveSpread).toFixed(1)}`;
+              })()}
               sub={lo.liveSpreadHome ? `H ${lo.liveSpreadHome}` : lo.liveSpreadAway ? `A ${lo.liveSpreadAway}` : null}
             />
           )}
@@ -328,9 +333,9 @@ export default function Home() {
             )}
             {urac > 0 && (
               <div style={{ flex: 1, minWidth: 120, background: "rgba(167,139,250,.06)", border: "1px solid rgba(167,139,250,.18)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 16 }}>⚡</span>
+                <span style={{ fontSize: 16 }}>🍆</span>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#C4B5FD" }}>{urac} Upset Alert{urac > 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#C4B5FD" }}>{urac} Pocket Open{urac > 1 ? "s" : ""}</div>
                   <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", marginTop: 1 }}>Dog run + line move 5.5+</div>
                 </div>
               </div>
@@ -350,7 +355,7 @@ export default function Home() {
             borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600,
             color: filter === "upset" ? "#C4B5FD" : "rgba(255,255,255,.35)",
             cursor: "pointer", transition: "all .15s", whiteSpace: "nowrap", fontFamily: "inherit",
-          }}>⚡ Upsets{urac ? ` ${urac}` : ""}</button>
+          }}>🍆 Pocket Open{urac ? ` ${urac}` : ""}</button>
           <button onClick={() => setNcaa(v => !v)} style={{
             background: ncaa ? "rgba(245,158,11,.1)" : "transparent",
             border: ncaa ? "1px solid rgba(245,158,11,.25)" : "1px solid rgba(255,255,255,.05)",
@@ -373,7 +378,7 @@ export default function Home() {
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.2)", fontSize: 12 }}>
-            {filter === "spread" ? "No spread alerts." : filter === "runs" ? "No scoring runs." : filter === "live" ? "No live games." : filter === "upset" ? "No upset alerts." : "No games today."}
+            {filter === "spread" ? "No spread alerts." : filter === "runs" ? "No scoring runs." : filter === "live" ? "No live games." : filter === "upset" ? "No pocket open alerts." : "No games today."}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
