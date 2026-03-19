@@ -61,16 +61,23 @@ async function fetchRun(eventId, homeId, awayId) {
     const scoring = plays.filter((p) => p.scoringPlay && p.scoreValue > 0);
     if (!scoring.length) return null;
 
-    let total = 0, home = 0, away = 0;
-    for (let i = scoring.length - 1; i >= 0 && total < RUN_WINDOW; i--) {
-      const p = scoring[i];
-      if (total + p.scoreValue > RUN_WINDOW + 3) break;
-      total += p.scoreValue;
-      if (p.team?.id === homeId) home += p.scoreValue;
-      else if (p.team?.id === awayId) away += p.scoreValue;
-      if (total >= RUN_WINDOW) break;
-    }
-    return { homeRunPts: home, awayRunPts: away, totalRunPts: total };
+    const calcWindow = (win) => {
+      let total = 0, home = 0, away = 0;
+      for (let i = scoring.length - 1; i >= 0 && total < win; i--) {
+        const p = scoring[i];
+        if (total + p.scoreValue > win + 3) break;
+        total += p.scoreValue;
+        if (p.team?.id === homeId) home += p.scoreValue;
+        else if (p.team?.id === awayId) away += p.scoreValue;
+        if (total >= win) break;
+      }
+      return { homeRunPts: home, awayRunPts: away, totalRunPts: total };
+    };
+
+    const r15 = calcWindow(15);
+    const r12 = calcWindow(12);
+    // Spread top-level for backward compat (15-pt window), plus run12 for alert 3
+    return { ...r15, run12: r12 };
   } catch { return null; }
 }
 
