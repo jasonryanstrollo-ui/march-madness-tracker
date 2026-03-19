@@ -108,11 +108,29 @@ function GameCard({ g }) {
   const urt = underdogRunTeam(g);
   const lo = g.liveOdds;
 
-  // Compute spread divergence
-  const openAbs = g.openSpread != null ? Math.abs(g.openSpread) : null;
-  const liveAbs = lo && lo.liveSpread != null ? Math.abs(lo.liveSpread) : null;
+  // Normalize live spread to always be quoted from the original favorite's perspective.
+  // ESPN's lo.details / lo.liveSpread may flip the reference team mid-game.
+  // e.g. if SMU opened -6.5 but ESPN now shows "MIA -7", we want "SMU +7".
+  let normalizedLiveSpread = null;
+  if (lo?.liveSpread != null) {
+    const rawVal = Number(lo.liveSpread);
+    if (g.spreadFavoriteAbbr) {
+      const liveFav = lo.details
+        ? (lo.details.match(/^([A-Z]+)/)?.[1] ?? (rawVal < 0 ? g.home : g.away))
+        : (rawVal < 0 ? g.home : g.away);
+      normalizedLiveSpread = liveFav === g.spreadFavoriteAbbr ? rawVal : -rawVal;
+    } else {
+      normalizedLiveSpread = rawVal;
+    }
+  }
+
+  // Divergence: signed delta from the original favorite's perspective.
+  // Positive = line moved against the favorite (underdog covering more);
+  // Negative = line tightened in the favorite's direction.
   let divergence = null;
-  if (openAbs !== null && liveAbs !== null) divergence = liveAbs - openAbs;
+  if (g.openSpread != null && normalizedLiveSpread !== null) {
+    divergence = normalizedLiveSpread - Number(g.openSpread);
+  }
 
   // Card style based on highest-priority alert
   const cardBg = sara ? "rgba(245,158,11,.05)" : sa ? "rgba(239,68,68,.04)" : ura ? "rgba(167,139,250,.04)" : "rgba(255,255,255,.02)";
@@ -184,24 +202,19 @@ function GameCard({ g }) {
           {g.openSpread !== null && g.spreadFavoriteAbbr && (
             <OddsChip label="Open" value={`${g.spreadFavoriteAbbr} ${Number(g.openSpread) > 0 ? "+" : ""}${Number(g.openSpread).toFixed(1)}`} />
           )}
-          {lo && lo.liveSpread != null && (
+          {normalizedLiveSpread !== null && (
             <OddsChip
               label="Live"
-              value={(() => {
-                const favAbbr = lo.details
-                  ? (lo.details.match(/^([A-Z]+)/)?.[1] ?? (Number(lo.liveSpread) < 0 ? g.home : g.away))
-                  : (Number(lo.liveSpread) < 0 ? g.home : g.away);
-                return `${favAbbr} ${Number(lo.liveSpread) > 0 ? "+" : ""}${Number(lo.liveSpread).toFixed(1)}`;
-              })()}
+              value={`${g.spreadFavoriteAbbr || (normalizedLiveSpread < 0 ? g.home : g.away)} ${normalizedLiveSpread > 0 ? "+" : ""}${normalizedLiveSpread.toFixed(1)}`}
               sub={lo.liveSpreadHome ? `H ${lo.liveSpreadHome}` : lo.liveSpreadAway ? `A ${lo.liveSpreadAway}` : null}
             />
           )}
           {divergence !== null && live && (
             <OddsChip
               label="Shift"
-              value={`${Number(divergence) > 0 ? "+" : ""}${Number(divergence).toFixed(1)}`}
-              alert={Math.abs(Number(divergence)) >= 3}
-              sub={Number(divergence) > 0 ? "line moving out" : Number(divergence) < 0 ? "line tightening" : "no move"}
+              value={`${divergence > 0 ? "+" : ""}${divergence.toFixed(1)}`}
+              alert={Math.abs(divergence) >= 3}
+              sub={divergence > 0 ? "fav slipping" : divergence < 0 ? "fav covering" : "no move"}
             />
           )}
           {sa && g.spreadUnderperformance != null && (
