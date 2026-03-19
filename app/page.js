@@ -43,9 +43,16 @@ function isUnderdogRunAlert(g) {
   if (g.status !== "inprogress" && g.status !== "halftime") return false;
   if (!underdogRunTeam(g)) return false;
   const lo = g.liveOdds;
-  if (!lo?.liveSpread || g.openSpread == null) return false;
-  const divergence = Math.abs(lo.liveSpread) - Math.abs(g.openSpread);
-  return divergence < -LINE_MOVE_THRESH;
+  if (!lo?.liveSpread || !lo.isLive || g.openSpread == null) return false;
+  // Normalize live spread to original favorite's perspective then compute signed shift
+  const rawVal = Number(lo.liveSpread);
+  const liveFav = lo.details
+    ? (lo.details.match(/^([A-Z]+)/)?.[1] ?? (rawVal < 0 ? g.home : g.away))
+    : (rawVal < 0 ? g.home : g.away);
+  const normalizedLive = liveFav === g.spreadFavoriteAbbr ? rawVal : -rawVal;
+  const divergence = normalizedLive - Number(g.openSpread);
+  // Positive divergence = line moved against the favorite by that many points
+  return divergence > LINE_MOVE_THRESH;
 }
 
 const CSS = `
@@ -202,7 +209,7 @@ function GameCard({ g }) {
           {g.openSpread !== null && g.spreadFavoriteAbbr && (
             <OddsChip label="Open" value={`${g.spreadFavoriteAbbr} ${Number(g.openSpread) > 0 ? "+" : ""}${Number(g.openSpread).toFixed(1)}`} />
           )}
-          {normalizedLiveSpread !== null && (
+          {normalizedLiveSpread !== null && lo.isLive && (
             <OddsChip
               label="Live"
               value={`${g.spreadFavoriteAbbr || (normalizedLiveSpread < 0 ? g.home : g.away)} ${normalizedLiveSpread > 0 ? "+" : ""}${normalizedLiveSpread.toFixed(1)}`}

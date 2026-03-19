@@ -33,18 +33,26 @@ async function fetchLiveOdds(eventId) {
     if (!odds) odds = items[0];
     if (!odds) return null;
 
+    // ESPN stores the static/opening line in odds.spread and odds.open.spread.
+    // The truly live in-game line (if the provider offers it) lives in odds.current.spread.
+    // Fall back through: current → spread → null.
+    const liveSpread = odds.current?.spread ?? odds.spread ?? null;
+    const openingSpread = odds.open?.spread ?? null;
+
     return {
-      liveSpread: odds.spread ?? null,
-      openingSpread: odds.open?.spread ?? null,
-      liveSpreadOdds: odds.spreadOdds ?? null,
-      liveOU: odds.overUnder ?? null,
+      liveSpread,
+      openingSpread,
+      // Flag whether we actually have a live (in-game) line vs just the pre-game line
+      isLive: odds.current?.spread != null,
+      liveSpreadOdds: odds.current?.spreadOdds ?? odds.spreadOdds ?? null,
+      liveOU: odds.current?.overUnder ?? odds.overUnder ?? null,
       liveMLHome: odds.homeTeamOdds?.moneyLine ?? null,
       liveMLAway: odds.awayTeamOdds?.moneyLine ?? null,
       liveFavHome: odds.homeTeamOdds?.favorite ?? false,
       liveFavAway: odds.awayTeamOdds?.favorite ?? false,
       liveSpreadHome: odds.homeTeamOdds?.spreadOdds ?? null,
       liveSpreadAway: odds.awayTeamOdds?.spreadOdds ?? null,
-      details: odds.details || null,
+      details: odds.current?.details ?? odds.details ?? null,
       provider: odds.provider?.name || "ESPN BET",
     };
   } catch { return null; }
