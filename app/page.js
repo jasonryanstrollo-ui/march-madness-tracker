@@ -216,14 +216,6 @@ function GameCard({ g }) {
               sub={lo.liveSpreadHome ? `H ${lo.liveSpreadHome}` : lo.liveSpreadAway ? `A ${lo.liveSpreadAway}` : null}
             />
           )}
-          {shift !== null && (
-            <OddsChip
-              label="Shift"
-              value={`${shift > 0 ? "+" : ""}${shift.toFixed(1)}`}
-              alert={shift <= -5}
-              sub={shift > 0 ? "fav ahead of line" : shift < 0 ? "fav behind line" : "on the line"}
-            />
-          )}
           {sa && g.spreadUnderperformance != null && (
             <OddsChip label="vs Spread" value={`-${Number(g.spreadUnderperformance).toFixed(1)}`} alert={true} sub="underperforming" />
           )}
