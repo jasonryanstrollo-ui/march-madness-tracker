@@ -131,13 +131,13 @@ function GameCard({ g }) {
     }
   }
 
-  // Divergence: signed delta from the original favorite's perspective.
-  // Positive = line moved against the favorite (underdog covering more);
-  // Negative = line tightened in the favorite's direction.
-  let divergence = null;
-  if (g.openSpread != null && normalizedLiveSpread !== null) {
-    divergence = normalizedLiveSpread - Number(g.openSpread);
-  }
+  // Shift: score-based delta — how far the actual margin has moved from the opening line.
+  // Uses actMargin (from favorite's POV) minus expMargin (abs of opening spread).
+  // Positive = favorite outperforming the line; Negative = favorite falling behind it.
+  // Does NOT depend on live odds, so it's always available for live games.
+  const shift = live && g.actualMargin != null && g.expectedMargin != null
+    ? g.actualMargin - g.expectedMargin
+    : null;
 
   // Card style based on highest-priority alert
   const cardBg = sara ? "rgba(245,158,11,.05)" : sa ? "rgba(239,68,68,.04)" : ura ? "rgba(167,139,250,.04)" : "rgba(255,255,255,.02)";
@@ -216,12 +216,12 @@ function GameCard({ g }) {
               sub={lo.liveSpreadHome ? `H ${lo.liveSpreadHome}` : lo.liveSpreadAway ? `A ${lo.liveSpreadAway}` : null}
             />
           )}
-          {divergence !== null && live && (
+          {shift !== null && (
             <OddsChip
               label="Shift"
-              value={`${divergence > 0 ? "+" : ""}${divergence.toFixed(1)}`}
-              alert={Math.abs(divergence) >= 3}
-              sub={divergence > 0 ? "fav slipping" : divergence < 0 ? "fav covering" : "no move"}
+              value={`${shift > 0 ? "+" : ""}${shift.toFixed(1)}`}
+              alert={shift <= -5}
+              sub={shift > 0 ? "fav ahead of line" : shift < 0 ? "fav behind line" : "on the line"}
             />
           )}
           {sa && g.spreadUnderperformance != null && (
