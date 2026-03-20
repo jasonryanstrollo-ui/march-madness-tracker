@@ -8,8 +8,6 @@ const ODDS_BASE =
   "https://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-college-basketball/events";
 const SUMMARY =
   "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary";
-const RUN_WINDOW = 15;
-
 function elapsed(clock, period, sn) {
   if (sn === "STATUS_HALFTIME") return 20;
   if (sn === "STATUS_FINAL" || sn === "STATUS_END_PERIOD") return 40;
@@ -84,8 +82,9 @@ async function fetchRun(eventId, homeId, awayId) {
 
     const r15 = calcWindow(15);
     const r12 = calcWindow(12);
-    // Spread top-level for backward compat (15-pt window), plus run12 for alert 3
-    return { ...r15, run12: r12 };
+    const r20 = calcWindow(20);
+    // Spread top-level for backward compat (15-pt window), plus run12 / run20 for richer UI.
+    return { ...r15, run12: r12, run20: r20 };
   } catch { return null; }
 }
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 const POLL = 30000;
 const SPREAD_THRESH = 5;
 const MIN_ELAPSED = 5;
-const RUN_THRESH = 0.75;
+const RUN_THRESH = 0.7;
 const LINE_MOVE_THRESH = 5.5;
 const FONTS = {
   sans: "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
@@ -19,7 +19,7 @@ function isSpreadAlert(g) {
   return (g.status === "inprogress" || g.status === "halftime") &&
     g.elapsedMinutes >= MIN_ELAPSED && g.spreadUnderperformance != null && g.spreadUnderperformance > SPREAD_THRESH;
 }
-// Alert 2: spread alert AND a team has 75%+ of last 15 pts simultaneously
+// Alert 2: spread alert AND a team has 70%+ of last 15 pts simultaneously
 function isSpreadAndRun(g) {
   return isSpreadAlert(g) && hasRun(g);
 }
@@ -35,7 +35,7 @@ function runTeam(g) {
   if (a / t >= RUN_THRESH) return g.away;
   return null;
 }
-// Alert 3: underdog has 75%+ of last 12 pts AND live spread tightened 5.5+ pts vs open
+// Alert 3: underdog has 70%+ of last 12 pts AND live spread tightened 5.5+ pts vs open
 function underdogRunTeam(g) {
   const run12 = g.scoringRun?.run12;
   if (!run12?.totalRunPts || !g.spreadFavoriteAbbr) return null;
@@ -113,6 +113,64 @@ function OddsChip({ label, value, sub, alert }) {
       <span style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,.3)", letterSpacing: ".05em", textTransform: "uppercase", fontFamily: FONTS.mono }}>{label}</span>
       <span style={{ fontSize: 13, fontWeight: 700, color: alert ? "#EF4444" : "#fff", fontFamily: FONTS.mono, marginTop: 1 }}>{value}</span>
       {sub && <span style={{ fontSize: 8, color: alert ? "#F87171" : "rgba(255,255,255,.25)", fontFamily: FONTS.mono, marginTop: 1 }}>{sub}</span>}
+    </div>
+  );
+}
+
+function RunTracker({ run, away, home }) {
+  if (!run?.totalRunPts) return null;
+  const awayPct = Math.round((run.awayRunPts / run.totalRunPts) * 100);
+  const homePct = Math.round((run.homeRunPts / run.totalRunPts) * 100);
+
+  const TeamSlice = ({ abbr, pts, pct, align = "left" }) => (
+    <div style={{
+      flex: 1,
+      padding: "8px 10px",
+      borderRadius: 12,
+      background: "rgba(255,255,255,.04)",
+      border: "1px solid rgba(255,255,255,.07)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.04)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,.55)", fontFamily: FONTS.mono }}>{abbr}</span>
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-.04em", fontFamily: FONTS.mono }}>{pts}</span>
+      </div>
+      <div style={{ marginTop: 7, height: 5, borderRadius: 999, background: "rgba(255,255,255,.08)", overflow: "hidden" }}>
+        <div style={{
+          height: "100%",
+          width: `${Math.min(pct, 100)}%`,
+          marginLeft: align === "right" ? "auto" : 0,
+          borderRadius: 999,
+          background: pct >= 70 ? "linear-gradient(90deg, #22D3EE, #38BDF8)" : "rgba(255,255,255,.26)",
+        }} />
+      </div>
+      <div style={{ marginTop: 5, fontSize: 10, color: pct >= 70 ? "#7DD3FC" : "rgba(255,255,255,.38)", fontFamily: FONTS.mono }}>
+        {pct}% of last 20
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      marginTop: 8,
+      padding: "10px 10px 11px",
+      borderRadius: 14,
+      background: "rgba(255,255,255,.035)",
+      border: "1px solid rgba(255,255,255,.07)",
+      backdropFilter: "blur(14px)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", fontFamily: FONTS.mono }}>
+          Last 20 Points
+        </span>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,.32)", fontFamily: FONTS.mono }}>
+          {run.totalRunPts} tracked
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <TeamSlice abbr={away} pts={run.awayRunPts} pct={awayPct} />
+        <TeamSlice abbr={home} pts={run.homeRunPts} pct={homePct} align="right" />
+      </div>
     </div>
   );
 }
@@ -223,6 +281,7 @@ function GameCard({ g }) {
   const hs = g.score?.[g.home];
   const as_ = g.score?.[g.away];
   const run = g.scoringRun;
+  const run20 = g.scoringRun?.run20;
   const rt = runTeam(g);
   const urt = underdogRunTeam(g);
   const lo = g.liveOdds;
@@ -349,6 +408,10 @@ function GameCard({ g }) {
         </div>
       )}
 
+      {live && run20?.totalRunPts > 0 && (
+        <RunTracker run={run20} away={g.away} home={g.home} />
+      )}
+
       {/* Scheduled time */}
       {g.status === "scheduled" && (
         <div style={{ marginTop: 8, fontSize: 10, color: "rgba(255,255,255,.3)", fontFamily: FONTS.mono }}>{g.local_start}</div>
@@ -451,9 +514,9 @@ export default function Home() {
 
             <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 16, paddingBottom: 2 }}>
               <HeroStat label="Live" value={lc} tone="live" />
-              <HeroStat label="Combo" value={sarac} tone="combo" />
-              <HeroStat label="Pocket" value={urac} tone="pocket" />
-              <HeroStat label="Board" value={games.length} tone="neutral" />
+              <HeroStat label="Spread Open" value={sc} tone="spread" />
+              <HeroStat label="Heater" value={rc} tone="run" />
+              <HeroStat label="Pocket Open" value={urac} tone="pocket" />
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 11, color: "rgba(255,255,255,.48)", fontFamily: FONTS.mono }}>
@@ -478,10 +541,10 @@ export default function Home() {
 
         {(sc > 0 || rc > 0 || urac > 0) && (
           <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-            {sarac > 0 && <SummaryTile icon="🚨🔥" title={`${sarac} Combo Alert${sarac > 1 ? "s" : ""}`} sub="Spread miss plus live run" tone="combo" />}
-            {sc > 0 && <SummaryTile icon="🚨" title={`${sc} Spread Alert${sc > 1 ? "s" : ""}`} sub="Favorite is 5+ off the line" tone="spread" />}
-            {rc > 0 && <SummaryTile icon="🔥" title={`${rc} Run${rc > 1 ? "s" : ""}`} sub="75%+ of the last 15 points" tone="run" />}
-            {urac > 0 && <SummaryTile icon="🍆" title={`${urac} Pocket Open${urac > 1 ? "s" : ""}`} sub="Includes combo alerts" tone="pocket" />}
+            {sarac > 0 && <SummaryTile icon="🚨🔥" title={`${sarac} Combo Alert${sarac > 1 ? "s" : ""}`} sub="Spread miss plus active run" tone="combo" />}
+            {sc > 0 && <SummaryTile icon="🚨" title={`${sc} Spread Open${sc > 1 ? "s" : ""}`} sub="Favorite is 5+ off the spread" tone="spread" />}
+            {rc > 0 && <SummaryTile icon="🔥" title={`${rc} Heater${rc > 1 ? "s" : ""}`} sub="70% of the last 15 points" tone="run" />}
+            {urac > 0 && <SummaryTile icon="🍆" title={`${urac} Pocket Open${urac > 1 ? "s" : ""}`} sub="Current app pocket logic, including combo alerts" tone="pocket" />}
           </div>
         )}
 
@@ -511,7 +574,7 @@ export default function Home() {
                 <span style={{ fontSize: 16 }}>🔥</span>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#FBBF24" }}>{rc} Run{rc > 1 ? "s" : ""}</div>
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", marginTop: 1 }}>75%+ of last 15 pts</div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", marginTop: 1 }}>70%+ of last 15 pts</div>
                 </div>
               </div>
             )}
