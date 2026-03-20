@@ -2,14 +2,20 @@
 export const metadata = {
   title: "March Madness Upset Tracker",
   description: "Live monitoring of March Madness games — get alerted when favorites are trailing.",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
-  themeColor: "#0A0A0F",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Upset Tracker",
   },
   manifest: "/manifest.json",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#0A0A0F",
 };
 
 export default function RootLayout({ children }) {

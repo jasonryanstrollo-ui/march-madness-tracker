@@ -6,6 +6,10 @@ const SPREAD_THRESH = 5;
 const MIN_ELAPSED = 5;
 const RUN_THRESH = 0.75;
 const LINE_MOVE_THRESH = 5.5;
+const FONTS = {
+  sans: "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  mono: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+};
 
 const SL = { inprogress: "LIVE", scheduled: "UPCOMING", closed: "FINAL", halftime: "HALF" };
 const SC = { inprogress: "#EF4444", halftime: "#F59E0B", scheduled: "#22C55E", closed: "#6B7280" };
@@ -54,8 +58,12 @@ function isUnderdogRunAlert(g) {
   // Positive divergence = line moved against the favorite by that many points
   return divergence > LINE_MOVE_THRESH;
 }
+function isPocketOpen(g) {
+  return isSpreadAndRun(g) || isUnderdogRunAlert(g);
+}
 
 const CSS = `
+@keyframes drift{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(0,10px,0) scale(1.04)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 @keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}50%{box-shadow:0 0 16px 2px rgba(239,68,68,.15)}}
 @keyframes glowCombo{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 18px 3px rgba(245,158,11,.18)}}
@@ -63,7 +71,14 @@ const CSS = `
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{overscroll-behavior:none;margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+html{background:
+radial-gradient(circle at top left, rgba(14,165,233,.16), transparent 32%),
+radial-gradient(circle at top right, rgba(168,85,247,.14), transparent 28%),
+linear-gradient(180deg, #09111d 0%, #050912 52%, #04070e 100%)}
+body{overscroll-behavior:none;margin:0;font-family:${FONTS.sans};background:transparent;color:#fff}
+button{font:inherit}
+.hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none}
+.hide-scrollbar::-webkit-scrollbar{display:none}
 `;
 
 function Momentum({ pts, total }) {
@@ -79,7 +94,7 @@ function Momentum({ pts, total }) {
           transition: "width .5s",
         }} />
       </div>
-      <span style={{ fontSize: 9, fontWeight: 600, color: hot ? "#F59E0B" : "rgba(255,255,255,.25)", fontFamily: "monospace" }}>{pts}</span>
+      <span style={{ fontSize: 9, fontWeight: 600, color: hot ? "#F59E0B" : "rgba(255,255,255,.25)", fontFamily: FONTS.mono }}>{pts}</span>
     </div>
   );
 }
@@ -89,14 +104,111 @@ function OddsChip({ label, value, sub, alert }) {
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center",
       padding: "4px 8px", borderRadius: 6,
-      background: alert ? "rgba(239,68,68,.08)" : "rgba(255,255,255,.03)",
-      border: alert ? "1px solid rgba(239,68,68,.2)" : "1px solid rgba(255,255,255,.05)",
+      background: alert ? "rgba(239,68,68,.1)" : "rgba(255,255,255,.05)",
+      border: alert ? "1px solid rgba(239,68,68,.22)" : "1px solid rgba(255,255,255,.08)",
       minWidth: 56,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)",
+      backdropFilter: "blur(14px)",
     }}>
-      <span style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,.3)", letterSpacing: ".05em", textTransform: "uppercase", fontFamily: "monospace" }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 700, color: alert ? "#EF4444" : "#fff", fontFamily: "monospace", marginTop: 1 }}>{value}</span>
-      {sub && <span style={{ fontSize: 8, color: alert ? "#F87171" : "rgba(255,255,255,.25)", fontFamily: "monospace", marginTop: 1 }}>{sub}</span>}
+      <span style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,.3)", letterSpacing: ".05em", textTransform: "uppercase", fontFamily: FONTS.mono }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: alert ? "#EF4444" : "#fff", fontFamily: FONTS.mono, marginTop: 1 }}>{value}</span>
+      {sub && <span style={{ fontSize: 8, color: alert ? "#F87171" : "rgba(255,255,255,.25)", fontFamily: FONTS.mono, marginTop: 1 }}>{sub}</span>}
     </div>
+  );
+}
+
+function tonePalette(tone = "neutral") {
+  return {
+    neutral: { accent: "#E5E7EB", bg: "rgba(148,163,184,.08)", border: "rgba(148,163,184,.18)" },
+    live: { accent: "#86EFAC", bg: "rgba(34,197,94,.12)", border: "rgba(34,197,94,.25)" },
+    combo: { accent: "#FCD34D", bg: "rgba(245,158,11,.12)", border: "rgba(245,158,11,.24)" },
+    spread: { accent: "#FCA5A5", bg: "rgba(239,68,68,.12)", border: "rgba(239,68,68,.24)" },
+    run: { accent: "#7DD3FC", bg: "rgba(56,189,248,.12)", border: "rgba(56,189,248,.24)" },
+    pocket: { accent: "#D8B4FE", bg: "rgba(168,85,247,.12)", border: "rgba(168,85,247,.26)" },
+    ncaa: { accent: "#FDE68A", bg: "rgba(245,158,11,.12)", border: "rgba(245,158,11,.24)" },
+  }[tone] || { accent: "#E5E7EB", bg: "rgba(148,163,184,.08)", border: "rgba(148,163,184,.18)" };
+}
+
+function HeroStat({ label, value, tone = "neutral" }) {
+  const palette = tonePalette(tone);
+  return (
+    <div style={{
+      minWidth: 94,
+      padding: "10px 12px",
+      borderRadius: 16,
+      background: "linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.02))",
+      border: `1px solid ${palette.border}`,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)",
+      backdropFilter: "blur(18px)",
+    }}>
+      <div style={{ fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", fontFamily: FONTS.mono }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800, color: palette.accent, letterSpacing: "-.04em" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SummaryTile({ icon, title, sub, tone = "neutral" }) {
+  const palette = tonePalette(tone);
+  return (
+    <div style={{
+      flex: 1,
+      minWidth: 120,
+      padding: "10px 12px",
+      borderRadius: 18,
+      background: "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025))",
+      border: `1px solid ${palette.border}`,
+      boxShadow: "0 18px 40px rgba(2,6,23,.18)",
+      backdropFilter: "blur(18px)",
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+    }}>
+      <div style={{
+        width: 34,
+        height: 34,
+        borderRadius: 12,
+        display: "grid",
+        placeItems: "center",
+        fontSize: 16,
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+        flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: palette.accent }}>{title}</div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,.42)", marginTop: 2 }}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+function FilterButton({ label, active, onClick, tone = "neutral" }) {
+  const palette = tonePalette(tone);
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? palette.bg : "rgba(255,255,255,.03)",
+        border: active ? `1px solid ${palette.border}` : "1px solid rgba(255,255,255,.07)",
+        borderRadius: 999,
+        padding: "9px 14px",
+        fontSize: 11,
+        fontWeight: 700,
+        color: active ? palette.accent : "rgba(255,255,255,.5)",
+        cursor: "pointer",
+        transition: "all .2s ease",
+        whiteSpace: "nowrap",
+        boxShadow: active ? "0 10px 24px rgba(2,6,23,.18)" : "none",
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -140,26 +252,39 @@ function GameCard({ g }) {
     : null;
 
   // Card style based on highest-priority alert
-  const cardBg = sara ? "rgba(245,158,11,.05)" : sa ? "rgba(239,68,68,.04)" : ura ? "rgba(167,139,250,.04)" : "rgba(255,255,255,.02)";
-  const cardBorder = sara ? "1px solid rgba(245,158,11,.25)" : sa ? "1px solid rgba(239,68,68,.2)" : ura ? "1px solid rgba(167,139,250,.2)" : "1px solid rgba(255,255,255,.05)";
+  const cardBg = sara
+    ? "linear-gradient(180deg, rgba(245,158,11,.16), rgba(245,158,11,.06))"
+    : sa
+      ? "linear-gradient(180deg, rgba(239,68,68,.14), rgba(239,68,68,.05))"
+      : ura
+        ? "linear-gradient(180deg, rgba(168,85,247,.15), rgba(168,85,247,.05))"
+        : "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025))";
+  const cardBorder = sara ? "1px solid rgba(245,158,11,.28)" : sa ? "1px solid rgba(239,68,68,.24)" : ura ? "1px solid rgba(167,139,250,.26)" : "1px solid rgba(255,255,255,.08)";
   const cardAnim = sara ? "glowCombo 2.5s ease-in-out infinite, fadeIn .3s ease-out" : sa ? "glow 2.5s ease-in-out infinite, fadeIn .3s ease-out" : ura ? "glowPurple 2.5s ease-in-out infinite, fadeIn .3s ease-out" : "fadeIn .3s ease-out";
+  const cardTopGlow = sara ? "rgba(245,158,11,.75)" : sa ? "rgba(239,68,68,.7)" : ura ? "rgba(167,139,250,.72)" : "rgba(125,211,252,.45)";
 
   return (
     <div style={{
-      background: cardBg, border: cardBorder, borderRadius: 12, padding: "12px 14px",
+      position: "relative", overflow: "hidden",
+      background: cardBg, border: cardBorder, borderRadius: 18, padding: "14px 14px 13px",
+      boxShadow: "0 20px 50px rgba(2,6,23,.22), inset 0 1px 0 rgba(255,255,255,.05)",
+      backdropFilter: "blur(18px)",
       animation: cardAnim, transition: "all .3s",
     }}>
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(255,255,255,.08), transparent 38%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: 0, left: 16, right: 16, height: 1, background: `linear-gradient(90deg, transparent, ${cardTopGlow}, transparent)` }} />
+      <div style={{ position: "relative", zIndex: 1 }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ position: "relative" }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: SC[g.status] || "#6B7280", animation: live ? "pulse 1.5s infinite" : "none" }} />
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: SC[g.status] || "#6B7280", animation: live ? "pulse 1.5s infinite" : "none", boxShadow: `0 0 12px ${SC[g.status] || "#6B7280"}` }} />
           </div>
-          <span style={{ fontSize: 10, fontWeight: 700, color: SC[g.status] || "#6B7280", fontFamily: "monospace", letterSpacing: ".06em" }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: SC[g.status] || "#6B7280", fontFamily: FONTS.mono, letterSpacing: ".08em" }}>
             {SL[g.status] || g.status}
           </span>
           {live && g.statusDetail && (
-            <span style={{ fontSize: 10, color: "rgba(255,255,255,.3)", fontFamily: "monospace" }}>{g.statusDetail}</span>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,.34)", fontFamily: FONTS.mono }}>{g.statusDetail}</span>
           )}
         </div>
         <div style={{ display: "flex", gap: 4 }}>
@@ -178,24 +303,26 @@ function GameCard({ g }) {
             <div style={{ display: "flex", alignItems: "center", padding: "3px 0" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                 {t.d.logo ? (
-                  <img src={t.d.logo} alt="" style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 3, opacity: t.s > t.opp && live ? 1 : .5 }} />
-                ) : <div style={{ width: 20, height: 20, borderRadius: 3, background: "rgba(255,255,255,.05)" }} />}
+                  <div style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.08)", display: "grid", placeItems: "center", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+                    <img src={t.d.logo} alt="" style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 3, opacity: t.s > t.opp && live ? 1 : .7 }} />
+                  </div>
+                ) : <div style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.08)" }} />}
                 {t.d.seed && t.d.seed <= 16 && (
-                  <span style={{ fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,.3)", fontFamily: "monospace", width: 14, textAlign: "center" }}>{t.d.seed}</span>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,.34)", fontFamily: FONTS.mono, width: 16, textAlign: "center" }}>{t.d.seed}</span>
                 )}
                 <span style={{
-                  fontSize: 13, fontWeight: t.s > t.opp && live ? 700 : 400,
-                  color: t.s > t.opp && live ? "#fff" : "rgba(255,255,255,.45)",
+                  fontSize: 14, fontWeight: t.s > t.opp && live ? 700 : 500,
+                  color: t.s > t.opp && live ? "#fff" : "rgba(255,255,255,.72)",
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}>{t.d.name || t.abbr}</span>
                 {t.isFav && g.spreadFavoriteAbbr && (
-                  <span style={{ fontSize: 7, fontWeight: 800, color: "#FBBF24", background: "rgba(251,191,36,.08)", borderRadius: 2, padding: "1px 4px", fontFamily: "monospace" }}>FAV</span>
+                  <span style={{ fontSize: 7, fontWeight: 800, color: "#FBBF24", background: "rgba(251,191,36,.12)", border: "1px solid rgba(251,191,36,.18)", borderRadius: 999, padding: "2px 5px", fontFamily: FONTS.mono }}>FAV</span>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {live && run?.totalRunPts > 0 && <Momentum pts={t.runPts} total={run.totalRunPts} />}
                 <span style={{
-                  fontSize: 20, fontWeight: 800, fontFamily: "monospace", minWidth: 32, textAlign: "right",
+                  fontSize: 22, fontWeight: 800, fontFamily: FONTS.mono, minWidth: 32, textAlign: "right", letterSpacing: "-.04em",
                   color: t.s > t.opp && live ? "#fff" : g.status !== "scheduled" ? "rgba(255,255,255,.4)" : "rgba(255,255,255,.1)",
                 }}>{g.status !== "scheduled" ? t.s : "–"}</span>
               </div>
@@ -224,15 +351,16 @@ function GameCard({ g }) {
 
       {/* Scheduled time */}
       {g.status === "scheduled" && (
-        <div style={{ marginTop: 6, fontSize: 10, color: "rgba(255,255,255,.2)", fontFamily: "monospace" }}>{g.local_start}</div>
+        <div style={{ marginTop: 8, fontSize: 10, color: "rgba(255,255,255,.3)", fontFamily: FONTS.mono }}>{g.local_start}</div>
       )}
 
       {/* Early game note */}
       {live && g.expectedMargin !== null && g.elapsedMinutes < MIN_ELAPSED && (
-        <div style={{ marginTop: 4, fontSize: 9, color: "rgba(255,255,255,.15)", fontFamily: "monospace", fontStyle: "italic" }}>
+        <div style={{ marginTop: 6, fontSize: 9, color: "rgba(255,255,255,.22)", fontFamily: FONTS.mono, fontStyle: "italic" }}>
           Spread tracking starts at 5:00
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -266,7 +394,7 @@ export default function Home() {
       if (filter === "live") return g.status === "inprogress" || g.status === "halftime";
       if (filter === "spread") return isSpreadAlert(g);
       if (filter === "runs") return hasRun(g);
-      if (filter === "upset") return isUnderdogRunAlert(g);
+      if (filter === "upset") return isPocketOpen(g);
       return true;
     })
     .sort((a, b) => {
@@ -281,27 +409,62 @@ export default function Home() {
   const sc = games.filter(isSpreadAlert).length;
   const sarac = games.filter(isSpreadAndRun).length;
   const rc = games.filter(hasRun).length;
-  const urac = games.filter(isUnderdogRunAlert).length;
+  const urac = games.filter(isPocketOpen).length;
   const lc = games.filter((g) => g.status === "inprogress" || g.status === "halftime").length;
-
-  const Pill = ({ k, label, active }) => (
-    <button onClick={() => setFilter(k)} style={{
-      background: active ? "rgba(255,255,255,.1)" : "transparent",
-      border: active ? "1px solid rgba(255,255,255,.12)" : "1px solid rgba(255,255,255,.05)",
-      borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600,
-      color: active ? "#fff" : "rgba(255,255,255,.35)",
-      cursor: "pointer", transition: "all .15s", whiteSpace: "nowrap", fontFamily: "inherit",
-    }}>{label}</button>
-  );
+  const refreshStamp = last && !err
+    ? last.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : null;
+  const Pill = () => null;
 
   return (
-    <div style={{ minHeight: "100dvh", background: "#0C0C10", color: "#fff" }}>
+    <div style={{ minHeight: "100dvh", color: "#fff" }}>
       <style>{CSS}</style>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -120, left: -60, width: 260, height: 260, borderRadius: "50%", background: "rgba(56,189,248,.14)", filter: "blur(22px)", animation: "drift 18s ease-in-out infinite" }} />
+        <div style={{ position: "absolute", top: 90, right: -80, width: 240, height: 240, borderRadius: "50%", background: "rgba(168,85,247,.16)", filter: "blur(28px)", animation: "drift 22s ease-in-out infinite" }} />
+        <div style={{ position: "absolute", bottom: -120, left: "18%", width: 280, height: 280, borderRadius: "50%", background: "rgba(245,158,11,.1)", filter: "blur(34px)", animation: "drift 24s ease-in-out infinite" }} />
+      </div>
 
-      <div style={{ maxWidth: 520, margin: "0 auto", padding: "16px 12px env(safe-area-inset-bottom)" }}>
+      <div style={{ position: "relative", maxWidth: 560, margin: "0 auto", padding: "18px 14px calc(26px + env(safe-area-inset-bottom))" }}>
+        <div style={{ position: "relative", marginBottom: 18, padding: "18px 18px 16px", borderRadius: 26, overflow: "hidden", background: "linear-gradient(160deg, rgba(9,18,33,.92), rgba(7,11,20,.82))", border: "1px solid rgba(148,163,184,.16)", boxShadow: "0 28px 80px rgba(2,6,23,.35)" }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(125,211,252,.08), transparent 38%, rgba(168,85,247,.08))", pointerEvents: "none" }} />
+          <div style={{ position: "relative", zIndex: 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", fontFamily: FONTS.mono }}>
+                  Tournament Watch
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-.05em" }}>March Madness</span>
+                  <span style={{ padding: "5px 10px", borderRadius: 999, background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.2)", color: "#FCA5A5", fontSize: 10, fontWeight: 700, letterSpacing: ".12em", fontFamily: FONTS.mono }}>
+                    LIVE BOARD
+                  </span>
+                </div>
+                <div style={{ marginTop: 8, maxWidth: 360, fontSize: 14, lineHeight: 1.45, color: "rgba(255,255,255,.64)" }}>
+                  Premium live tracking for spread misses, momentum swings, and Pocket Open spots.
+                </div>
+              </div>
+              <div style={{ padding: "8px 10px", borderRadius: 16, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.08)", fontSize: 10, color: err ? "#FCA5A5" : "rgba(255,255,255,.72)", fontFamily: FONTS.mono, whiteSpace: "nowrap" }}>
+                {err ? "Feed issue" : "30s refresh"}
+              </div>
+            </div>
+
+            <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 16, paddingBottom: 2 }}>
+              <HeroStat label="Live" value={lc} tone="live" />
+              <HeroStat label="Combo" value={sarac} tone="combo" />
+              <HeroStat label="Pocket" value={urac} tone="pocket" />
+              <HeroStat label="Board" value={games.length} tone="neutral" />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 11, color: "rgba(255,255,255,.48)", fontFamily: FONTS.mono }}>
+              <div style={{ width: 7, height: 7, borderRadius: "50%", background: err ? "#EF4444" : "#22C55E", animation: err ? "none" : "pulse 2s infinite", boxShadow: `0 0 14px ${err ? "#EF4444" : "#22C55E"}` }} />
+              <span>{err ? "Data feed error" : `${lc} live / ${games.length} total`}</span>
+              {refreshStamp && <span>Updated {refreshStamp}</span>}
+            </div>
+          </div>
+        </div>
         {/* Header */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "none" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-.02em" }}>March Madness</span>
             <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", color: "#EF4444", fontFamily: "monospace" }}>LIVE</span>
@@ -313,9 +476,18 @@ export default function Home() {
           </div>
         </div>
 
+        {(sc > 0 || rc > 0 || urac > 0) && (
+          <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+            {sarac > 0 && <SummaryTile icon="🚨🔥" title={`${sarac} Combo Alert${sarac > 1 ? "s" : ""}`} sub="Spread miss plus live run" tone="combo" />}
+            {sc > 0 && <SummaryTile icon="🚨" title={`${sc} Spread Alert${sc > 1 ? "s" : ""}`} sub="Favorite is 5+ off the line" tone="spread" />}
+            {rc > 0 && <SummaryTile icon="🔥" title={`${rc} Run${rc > 1 ? "s" : ""}`} sub="75%+ of the last 15 points" tone="run" />}
+            {urac > 0 && <SummaryTile icon="🍆" title={`${urac} Pocket Open${urac > 1 ? "s" : ""}`} sub="Includes combo alerts" tone="pocket" />}
+          </div>
+        )}
+
         {/* Alert summary */}
         {(sc > 0 || rc > 0 || urac > 0) && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "none" }}>
             {sarac > 0 && (
               <div style={{ flex: 1, minWidth: 120, background: "rgba(245,158,11,.07)", border: "1px solid rgba(245,158,11,.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 16 }}>🚨🔥</span>
@@ -348,15 +520,24 @@ export default function Home() {
                 <span style={{ fontSize: 16 }}>🍆</span>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#C4B5FD" }}>{urac} Pocket Open{urac > 1 ? "s" : ""}</div>
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", marginTop: 1 }}>Dog run + line move 5.5+</div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", marginTop: 1 }}>Includes combo alerts</div>
                 </div>
               </div>
             )}
           </div>
         )}
 
+        <div className="hide-scrollbar" style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", paddingBottom: 2 }}>
+          <FilterButton label={`All ${games.length}`} active={filter === "all"} onClick={() => setFilter("all")} />
+          <FilterButton label={`Live ${lc}`} active={filter === "live"} onClick={() => setFilter("live")} tone="live" />
+          <FilterButton label={`Spread${sc ? ` ${sc}` : ""}`} active={filter === "spread"} onClick={() => setFilter("spread")} tone="spread" />
+          <FilterButton label={`Runs${rc ? ` ${rc}` : ""}`} active={filter === "runs"} onClick={() => setFilter("runs")} tone="run" />
+          <FilterButton label={`🍆 Pocket Open${urac ? ` ${urac}` : ""}`} active={filter === "upset"} onClick={() => setFilter((k) => (k === "upset" ? "all" : "upset"))} tone="pocket" />
+          <FilterButton label="🏆 NCAA" active={ncaa} onClick={() => setNcaa((v) => !v)} tone="ncaa" />
+        </div>
+
         {/* Filters */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 2 }}>
+        <div style={{ display: "none" }}>
           <Pill k="all" label={`All ${games.length}`} active={filter === "all"} />
           <Pill k="live" label={`Live ${lc}`} active={filter === "live"} />
           <Pill k="spread" label={`Spread${sc ? ` ${sc}` : ""}`} active={filter === "spread"} />
